@@ -1,0 +1,15 @@
+{
+  "name": "trust-modeler",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && venv/bin/uvicorn app.main:app",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:electron": "wait-on http://localhost:5173 && electron electron/main.js",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^40.1.0",
+    "wait-on": "^9.0.3"
+  }
+}
