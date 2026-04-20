@@ -1,7 +1,11 @@
+import model.certificateGroup as certificateGroup
+import model.certificate as certificate
+
 class TrustList:
     def __init__(self, 
-                 id: int,
-                 certificates: list[str]
+                 trustedCertificates: dict[str, certificate.Certificate],
             ):
-        self.id = id
-        self.certificates = certificates
+        self.trustedCertificates = trustedCertificates
+    
+    def __repr__(self):
+        return f"certificates: {self.trustedCertificates}"
