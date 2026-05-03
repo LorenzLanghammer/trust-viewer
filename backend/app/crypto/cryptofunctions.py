@@ -10,13 +10,49 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
-from asyncua.ua import TrustListDataType
-import asyncua.ua.ua_binary as ua_binary
 from io import BytesIO
 import struct
+from OpenSSL import crypto
 
 
+def verify_certs_against_trustlists(certs, trustlists):
+    for cert in certs:
+        for trustlist in trustlists:
+            if verify_cert(cert, trustlist):
+                return True
+    return False
 
+
+def verify_cert(cert_bytes, trustlist):
+    cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_bytes)
+    store = crypto.X509Store()
+
+    if trustlist["trusted_certificates"]:
+        for c in trustlist["trusted_certificates"]:
+            store.add_cert(crypto.load_certificate(crypto.FILETYPE_ASN1, c))
+    
+    if trustlist["trusted_crls"]:
+        for crl_bytes in trustlist["trusted_crls"]:
+            crl = x509.load_der_x509_crl(crl_bytes)
+            store.add_crl(crl)
+    
+    if trustlist["issuer_crls"]:
+        for crl_bytes in trustlist["issuer_crls"]:
+            crl = x509.load_der_x509_crl(crl_bytes)
+            store.add_crl(crl)
+
+    #store.set_flags(crypto.X509StoreFlags.CRL_CHECK | crypto.X509StoreFlags.CRL_CHECK_ALL)
+    chain = [
+        crypto.load_certificate(crypto.FILETYPE_ASN1, c)
+        for c in trustlist["issuers"]
+    ]
+    store_ctx = crypto.X509StoreContext(store, cert, chain)
+
+    try:
+        store_ctx.verify_certificate()
+        return True
+    except crypto.X509StoreContextError:
+        return False
 
 
 def bytes_2_cert(bytes: str):
@@ -42,6 +78,7 @@ def bytes_2_cert(bytes: str):
     )
     
     return(result_cert, fingerprint)
+
 
 def hex_2_cert(hex: str):
     der_bytes = bytes.fromhex(hex)
@@ -159,11 +196,19 @@ def bytes_2_trustlist(data):
 
     cert_count = read_u32()
     certs = [read_bytes() for _ in range(cert_count)]
-    result["trusted_certs"] = certs
+    result["trusted_certificates"] = certs
 
     crl_count = read_u32()
     crls = [read_bytes() for _ in range(crl_count)]
     result["trusted_crls"] = crls
+
+    issuer_count = read_u32()
+    issuers = [read_bytes() for _ in range(issuer_count)]
+    result["issuers"] = issuers
+
+    issuer_crl_count = read_u32()
+    issuer_crls = [read_bytes() for _ in range(issuer_crl_count)]
+    result["issuer_crls"] = issuer_crls
 
     return result
     
@@ -195,13 +240,13 @@ def get_certs_and_trustlist(cert, trustlist_bytes):
         for trusted_cert_bytes in trusted_certs:
             trusted_cert = bytes_2_cert(trusted_cert_bytes)
             trustlist_certs[trusted_cert[1]] = trusted_cert[0]
-        
-
+    
     result_trustlist = trustlist.TrustList(trustlist_certs)
-
     result = (result_cert, result_trustlist)
     
     return result
             
+
+
 def cert_id(cert: x509):
     return cert.fingerprint(hashes.SHA256()).hex()

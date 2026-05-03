@@ -1,0 +1,10 @@
+[ca]
+default_ca = CA_default
+
+[CA_default]
+default_md = sha256
+database = ./index.txt
+crlnumber = ./crlnumber
+private_key = ./gds_ca_key.der
+certificate = ./gds_ca_cert.der
+default_crl_days = 30

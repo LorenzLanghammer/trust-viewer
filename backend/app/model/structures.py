@@ -24,4 +24,3 @@ def nodeid_2_uaNodeId(x: NodeId) -> ua.NodeId:
 
 def uaNodeId_2_nodeid(x: ua.NodeId) -> NodeId:
     return NodeId(x.NamespaceIndex, x.Identifier)
-

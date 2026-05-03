@@ -1,8 +1,8 @@
 
 from abc import ABC, abstractmethod
-from asyncua import Client, ua
 from model import application, certificate, domain, certificateGroup, trustlist, structures
 from crypto import cryptofunctions
+from asyncua import Client, ua
 
 class GdsInterface(ABC):
     @abstractmethod
@@ -12,7 +12,7 @@ class GdsInterface(ABC):
     async def disconnect(self):
         pass
     @abstractmethod
-    async def getApplications(self):
+    async def getApplicationInfos(self):
         pass
     @abstractmethod
     async def getCertificateGroups(self):
@@ -47,7 +47,8 @@ class open62541GDS(GdsInterface):
                  get_application_details: structures.NodeId,
                  get_certificate_group_details: structures.NodeId,
                  get_certificates: structures.NodeId,
-                 get_certificate_details: structures.NodeId
+                 get_certificate_details: structures.NodeId,
+                 get_certificate_groups_for_app: structures.NodeId
                  ):
         self.client = client
         self.registration_mgmt = registration_mgmt
@@ -60,6 +61,8 @@ class open62541GDS(GdsInterface):
         self.get_certificate_group_details = get_certificate_group_details
         self.get_certificates = get_certificates
         self.get_certificate_details = get_certificate_details
+        self.get_certificate_groups_for_app = get_certificate_groups_for_app
+
 
     async def connect(self):
         print("Connecting to OPC UA server...")
@@ -74,31 +77,58 @@ class open62541GDS(GdsInterface):
     async def disconnect(self):
         await self.client.disconnect()
          
-    async def getApplications(self):
-        try:
-            registration_mgmt = structures.nodeid_2_uaNode(self.registration_mgmt, self.client)
-            get_apps_method = structures.nodeid_2_uaNode(self.get_applications, self.client)
-            get_app_details_method = structures.nodeid_2_uaNode(self.get_application_details, self.client)
-            starting_id = ua.NodeId(0, 0)
-            all_applications = []
-            nodeids = await registration_mgmt.call_method(
-                    get_apps_method,
-                    ua.Variant(starting_id, ua.VariantType.NodeId),
-                    ua.Variant(0, ua.VariantType.UInt32)          
-                )
+    async def getApplicationInfos(self) -> list[application.Application]:
 
-            apps = await registration_mgmt.call_method(
-                get_app_details_method,
-                nodeids 
+        registration_mgmt = structures.nodeid_2_uaNode(self.registration_mgmt, self.client)
+        get_apps_method = structures.nodeid_2_uaNode(self.get_applications, self.client)
+        get_app_details_method = structures.nodeid_2_uaNode(self.get_application_details, self.client)
+        starting_id = ua.NodeId(0, 0)
+        all_applications = []
+
+        nodeids = await registration_mgmt.call_method(
+                get_apps_method,
+                ua.Variant(starting_id, ua.VariantType.NodeId),
+                ua.Variant(0, ua.VariantType.UInt32)          
             )
+
+        apps = await registration_mgmt.call_method(
+            get_app_details_method,
+            nodeids 
+        )
+        
+        for app in apps:
+            nodeId = app.Application.ApplicationId
+            id = structures.NodeId(nodeId.NamespaceIndex, nodeId.Identifier)
+            appuri = app.Application.ApplicationUri
+            appname = app.Application.ApplicationNames[0]
+            discoveryurl = app.Application.DiscoveryUrls[0]
+            certinfos = await self.getCertificates(id, structures.NodeId(0, 0))
+            issued_certs = [certinfo.Certificate for certinfo in certinfos]
+            trustlists = []
+
+            certificate_groups = await self.getCertificateGroupsForApplication(id)
+
+            for certificate_group in certificate_groups:
+                trustlist = await self.getTrustList(id, structures.uaNodeId_2_nodeid(certificate_group))
+                trustlist_bytes = await self.readTrustList(structures.uaNodeId_2_nodeid(trustlist))
+                trustlists.append(cryptofunctions.bytes_2_trustlist(trustlist_bytes))
             
-            for app in apps:
-                all_applications.append((app.Application.ApplicationUri, app.Application.ApplicationNames[0].Text))
-    
-            return all_applications
-        except Exception as e:
-            print("error: " + str(e))
-            return {"error": str(e)}
+            all_applications.append(application.Application(id, appuri, appname, discoveryurl, issued_certs, trustlists))
+
+        return all_applications
+
+    async def getCertificateGroupsForApplication(self, applicationId: structures.NodeId):
+        applicationId_node = structures.nodeid_2_uaNodeId(applicationId)
+        directory_node = structures.nodeid_2_uaNode(self.directory, self.client)
+        get_certificate_grous_for_app_method = structures.nodeid_2_uaNode(self.get_certificate_groups_for_app, self.client)
+
+        certificate_groups_for_app = await directory_node.call_method(
+            get_certificate_grous_for_app_method,
+            ua.Variant(applicationId_node, ua.VariantType.NodeId)
+        )
+
+        return certificate_groups_for_app
+
         
     async def getCertificateGroups(self):
         

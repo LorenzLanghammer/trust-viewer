@@ -1,18 +1,24 @@
+import model.structures as structures
+import model.certificate as certificate
 
 class Application:
     def __init__(self,
                  node_id,
                  applicationuri, 
                  names, 
-                 discoveryurls
+                 discoveryurls,
+                 issued_certificates,
+                 trustlists
             ):
         self.node_id = node_id
         self.applicationuri = applicationuri
         self.names = names
         self.discoveryurls = discoveryurls
+        self.issued_certificates = issued_certificates
+        self.trustlists = trustlists
 
     def __repr__(self):
-        return f"nodeId: {self.node_id}, applicationuri: {self.applicationuri}, names: {self.names}, discoveryUrls: {self.discoveryurls}"
+        return f"nodeId: {self.node_id}, applicationuri: {self.applicationuri}, names: {self.names}"
     
     def __eq__(self, other):
         if not isinstance(other, Application):

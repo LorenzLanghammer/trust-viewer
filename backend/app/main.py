@@ -5,6 +5,7 @@ import asyncio
 from opcua.gdsInterface import open62541GDS
 from model import structures, domain, certificateGroup, application
 from crypto import cryptofunctions
+from domain_builder import *
 
 app = FastAPI()
 
@@ -20,7 +21,13 @@ app.add_middleware(
 @app.get("/opcuaconnect")
 async def opcuaconnect():
     print("Connecting to OPC UA server...")
+    result_domains = await main()
 
+    print(result_domains)
+
+    return {
+        "domains": domains_to_json(result_domains)
+    }
 
 async def main():
     gds_url = "opc.tcp://localhost:4840"
@@ -36,38 +43,60 @@ async def main():
                                 structures.NodeId(3, 7019),
                                 structures.NodeId(3, 7010),
                                 structures.NodeId(3, 7014),
-                                structures.NodeId(3, 7009)
+                                structures.NodeId(3, 7009),
+                                structures.NodeId(2, 508)
                                 )
+
     await gds_interface.connect()
- 
-    applications = []
-    certificate_groups = await gds_interface.getCertificateGroups()
-    domains = [] * len(certificate_groups)
+    applications = await gds_interface.getApplicationInfos()
+    applications_dict = {}
 
-    group_details = await gds_interface.getCertificateGroupAssignments(certificate_groups)
-    for group_detail in group_details:
-        trustlist = await gds_interface.readTrustList(structures.uaNodeId_2_nodeid(group_detail.TrustList))
-        new_domain = domain.Domain(structures.uaNodeId_2_nodeid(group_detail.CertificateGroupId))
+    domains = []
+    
+    for app in applications:
+        applications_dict[app.node_id] = {}
+    
+    for i, first_app in enumerate(applications):
+        for j in range(i, len(applications)):
+            if (i == j):
+                applications_dict[first_app.node_id][first_app.node_id] = True
+                continue
 
-        for app in group_detail.Applications:
-            app_id = structures.uaNodeId_2_nodeid(app)
-            app_detail = await gds_interface.getApplicationDetails(structures.uaNodeId_2_nodeid(app))
-            application_info = app_detail[0]
+            second_app = applications[j]
 
-            newApplication = application.Application(structures.uaNodeId_2_nodeid(application_info.Application.ApplicationId), 
-                                                         application_info.Application.ApplicationUri, 
-                                                         application_info.Application.ApplicationNames, 
-                                                         application_info.Application.DiscoveryUrls)   
+            trusts_1_to_2 = cryptofunctions.verify_certs_against_trustlists(
+                first_app.issued_certificates,
+                second_app.trustlists
+            )
 
-            certs = await gds_interface.getCertificates(app_id, structures.uaNodeId_2_nodeid(group_detail.CertificateGroupId))
-            result = cryptofunctions.get_certs_and_trustlist(certs[0], trustlist)
+            trusts_2_to_1 = cryptofunctions.verify_certs_against_trustlists(
+                second_app.issued_certificates, 
+                first_app.trustlists
+            )
 
-            if result[0]:
-                if not result[0][0].revoked:
-                    new_domain.add_application(newApplication)
+            if (trusts_1_to_2 and trusts_2_to_1):
+                applications_dict[first_app.node_id][second_app.node_id] = True
+                applications_dict[second_app.node_id][first_app.node_id] = True
+                domains.append(domain.Domain([first_app, second_app]))
+            else:
+                applications_dict[first_app.node_id][second_app.node_id] = False
 
-        domains.append(new_domain)
-    print(domains)
+    print(applications_dict)
+    result_domains = find_cliques(applications_dict)
+    return result_domains
+
+def nodeid_to_dict(nodeid):
+    return {
+        "namespace": nodeid.namespace,
+        "id": nodeid.id
+    }
+
+def domains_to_json(result_domains):
+    return [
+        [nodeid_to_dict(node) for node in domain]
+        for domain in result_domains
+    ]
+
 
 if __name__ == "__main__":
     asyncio.run(
