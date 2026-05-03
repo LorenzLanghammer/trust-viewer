@@ -7,47 +7,26 @@ interface Application {
 }
 
 function App() {
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [data, setData] = useState<any>(null);
 
   useEffect(() => {
     axios.get("http://localhost:8000/opcuaconnect")
       .then(res => {
-
         console.log(res.data);
-
-        const apps: Application[] = res.data.map((item: any) => ({
-          ApplicationUri: item[0],
-          ApplicationName: item[1]
-        }));
-
-        setApplications(apps);
+        setData(res.data);
       })
       .catch(err => {
-        console.error("Error fetching applications:", err);
+        console.error(err);
       });
   }, []);
 
   return (
-    <div style={{padding:"20px"}}>
-    <h1 style={{
-      position: "fixed",
-      top: 0,
-      left: 0,
-      width: "100%",
-      backgroundColor: "#fff",
-      padding: "20px",
-      zIndex: 1000,
-      boxShadow: "0 2px 4px rgba(0,0,0,0.1)"
-    }}>
-    Trustviewer
-    </h1>
-      <ul>
-        {applications.map((app, index) => (
-          <li key={index}>
-            <strong>{app.ApplicationName}</strong> — {app.ApplicationUri}
-          </li>
-        ))}
-      </ul>
+    <div style={{ padding: "20px" }}>
+      <h1>Trustviewer</h1>
+
+      <pre>
+        {JSON.stringify(data, null, 2)}
+      </pre>
     </div>
   );
 }
