@@ -1,8 +1,8 @@
-from crypto import cryptofunctions
-from model import structures
-from model import domain
-from domain_builder import *
-from opcua.gdsInterface import open62541GDS
+from .crypto import cryptofunctions
+from .model import structures
+from .model import domain
+from .domain_builder import *
+from .opcua.gdsInterface import open62541GDS
 from asyncua import Client
 import asyncio
 
@@ -29,11 +29,18 @@ async def test():
     applications = await gds_interface.getApplicationInfos()
     applications_dict = {}
 
+    cert_groups = await gds_interface.getCertificateGroups()
+    cert_group_detail = await gds_interface.getCertificateGroupAssignments(cert_groups)
+    print(cert_group_detail)
+
     domains = []
     
     for app in applications:
         applications_dict[app.node_id] = {}
-    
+        #print(app.node_id)
+        #print(app.trustlists)
+
+
     for i, first_app in enumerate(applications):
         for j in range(i, len(applications)):
             if (i == j):
@@ -59,9 +66,10 @@ async def test():
             else:
                 applications_dict[first_app.node_id][second_app.node_id] = False
 
+    print(applications_dict)
 
-    result_domains = find_cliques(applications_dict)
-    print(result_domains)
+    #result_domains = find_cliques(applications_dict)
+    #print(result_domains)
     
     
 if __name__ == "__main__":

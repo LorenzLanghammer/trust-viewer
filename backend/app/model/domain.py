@@ -1,6 +1,6 @@
-import model.application as application
-import model.certificateGroup as certificateGroup
-import model.structures as structures
+from . import application
+from . import certificateGroup
+from . import structures
 
 class Domain:
     def __init__(self,

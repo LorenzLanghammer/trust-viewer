@@ -1,8 +1,8 @@
-from model import structures
-from model import extension
-from model import certificate
-from model import certificateGroup
-from model import trustlist
+from ..model import structures
+from ..model import extension
+from ..model import certificate
+from ..model import certificateGroup
+from ..model import trustlist
 from cryptography import x509
 from cryptography.x509.oid import ExtensionOID
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -13,6 +13,7 @@ from cryptography.x509.oid import NameOID
 from io import BytesIO
 import struct
 from OpenSSL import crypto
+
 
 
 def verify_certs_against_trustlists(certs, trustlists):
@@ -50,8 +51,10 @@ def verify_cert(cert_bytes, trustlist):
 
     try:
         store_ctx.verify_certificate()
+        print("could verify")
         return True
     except crypto.X509StoreContextError:
+        print("could not verify")
         return False
 
 

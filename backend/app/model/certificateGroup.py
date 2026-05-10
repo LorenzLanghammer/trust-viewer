@@ -1,4 +1,4 @@
-import model.trustlist as trustlist
+from . import trustlist
 
 class CertificateGroup:
     def __init__(self, 

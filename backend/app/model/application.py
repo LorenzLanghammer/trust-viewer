@@ -1,5 +1,5 @@
-import model.structures as structures
-import model.certificate as certificate
+from . import structures
+from . import certificate
 
 class Application:
     def __init__(self,

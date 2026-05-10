@@ -1,5 +1,5 @@
-import model.certificateGroup as certificateGroup
-import model.certificate as certificate
+from . import certificateGroup
+from . import certificate
 
 class TrustList:
     def __init__(self, 
