@@ -1,8 +1,8 @@
-from ..model import structures
+from ..model import crl
 from ..model import extension
 from ..model import certificate
-from ..model import certificateGroup
 from ..model import trustlist
+from ..model import certSummary
 from cryptography import x509
 from cryptography.x509.oid import ExtensionOID
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -51,10 +51,8 @@ def verify_cert(cert_bytes, trustlist):
 
     try:
         store_ctx.verify_certificate()
-        print("could verify")
         return True
     except crypto.X509StoreContextError:
-        print("could not verify")
         return False
 
 
@@ -68,15 +66,23 @@ def bytes_2_cert(bytes: str):
     key_hex = key_bytes.hex()
 
     subject_name = cert.subject
-    country_value = subject_name.get_attributes_for_oid(NameOID.COUNTRY_NAME)[0].value
+    serial_number = cert.serial_number
+    #country_value = subject_name.get_attributes_for_oid(NameOID.COUNTRY_NAME)[0].value
     common_name = subject_name.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    issuer_name = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    not_before = cert.not_valid_before
+    not_after = cert.not_valid_after
     extensions = cert.extensions
     extensions_list = get_extensions(extensions)
     fingerprint = cert_id(cert)
     
     result_cert = certificate.Certificate(
+        serial_number,
         key_hex,
         common_name,
+        issuer_name,
+        str(not_before),
+        str(not_after),
         extensions_list
     )
     
@@ -215,6 +221,18 @@ def bytes_2_trustlist(data):
 
     return result
     
+
+def cert_bytes_2_certSummary(cert):
+    x509_cert = x509.load_der_x509_certificate(cert)
+    subject_name = x509_cert.subject
+    common_name = subject_name.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    issuer_name = x509_cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    return certSummary.CertSummary(common_name, issuer_name, cert_id(x509_cert))
+
+def crl_2_crlSummary(revocation_list):
+    x509_crl = x509.load_der_x509_crl(revocation_list)    
+    issuer_name = x509_crl.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    return crl.Crl(issuer_name, [r.serial_number for r in x509_crl])
 
 def get_certs_and_trustlist(cert, trustlist_bytes):
 

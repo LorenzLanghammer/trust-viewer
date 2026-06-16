@@ -6,7 +6,7 @@ class NodeId():
         self.id = id
     
     def __repr__(self):
-        return f"namespace: {self.namespace}, id: {self.id}"
+        return f"(namespace: {self.namespace}, id: {self.id})"
     
     def __eq__(self, other):
         if not hasattr(other, "namespace") or not hasattr(other, "id"):

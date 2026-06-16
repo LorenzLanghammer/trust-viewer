@@ -1,7 +1,7 @@
 
 from abc import ABC, abstractmethod
-from model import application, certificate, domain, certificateGroup, trustlist, structures
-from crypto import cryptofunctions
+from ..model import application, certificate, domain, certificateGroup, trustlist, structures
+from ..crypto import cryptofunctions
 from asyncua import Client, ua
 
 class GdsInterface(ABC):
@@ -96,6 +96,7 @@ class open62541GDS(GdsInterface):
             nodeids 
         )
         
+        '''
         for app in apps:
             nodeId = app.Application.ApplicationId
             id = structures.NodeId(nodeId.NamespaceIndex, nodeId.Identifier)
@@ -114,8 +115,9 @@ class open62541GDS(GdsInterface):
                 trustlists.append(cryptofunctions.bytes_2_trustlist(trustlist_bytes))
             
             all_applications.append(application.Application(id, appuri, appname, discoveryurl, issued_certs, trustlists))
+        '''
 
-        return all_applications
+        return apps
 
     async def getCertificateGroupsForApplication(self, applicationId: structures.NodeId):
         applicationId_node = structures.nodeid_2_uaNodeId(applicationId)
@@ -182,6 +184,7 @@ class open62541GDS(GdsInterface):
         )
         return app_details
 
+
     async def getCertificates(self, applicationId, certificateGroupId):
         certificate_management_node = structures.nodeid_2_uaNode(self.certificate_management_node, self.client)
         get_certificates_node = structures.nodeid_2_uaNode(self.get_certificates, self.client)
@@ -197,18 +200,11 @@ class open62541GDS(GdsInterface):
            ua.Variant(50, ua.VariantType.UInt32)          
         )
 
-        #certs = []
         get_certificate_details_node = structures.nodeid_2_uaNode(self.get_certificate_details, self.client)
         cert_details = await certificate_management_node.call_method(
             get_certificate_details_node,
             ua.Variant(certnodes, ua.VariantType.NodeId)
         )
-        
-        '''
-        for cert_detail in cert_details:
-            cert = cryptofunctions.bytes_2_cert(cert_detail.Certificate)
-            certs.append(cert)
-        '''
 
         return cert_details
     

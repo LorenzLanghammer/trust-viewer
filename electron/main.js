@@ -6,9 +6,8 @@ app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("no-sandbox");
 app.commandLine.appendSwitch("disable-software-rasterizer");
-app.commandLine.appendSwitch("disable-dev-shm-usage"); // optional for shared memory issues
-app.commandLine.appendSwitch("disable-setuid-sandbox"); // sometimes needed
-
+app.commandLine.appendSwitch("disable-dev-shm-usage");
+app.commandLine.appendSwitch("disable-setuid-sandbox"); 
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,

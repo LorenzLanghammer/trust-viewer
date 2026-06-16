@@ -6,3 +6,9 @@ class Extension:
 
     def __repr__(self):
         return f"{self.name}: {self.value}"
+
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "value": self.value
+        }

@@ -1,45 +1,106 @@
 import * as d3 from "d3"
 import { useEffect, useRef } from "react"
+import { ApplicationState, GroupState } from "../types/graph"
 
-export function Graph({ domains, groups }: { domains: (number | string)[][], groups?: Array<Array<{namespace: number | null, id: number | string}>> }) {
+export function Graph({
+  domains,
+  groups,
+  applications,
+  onNodeClick,
+  onGroupClick,
+  showDomainHulls,
+  showGroupHulls
+}: {
+  domains: (number | string)[][]
+  groups: GroupState[]
+  applications: Record<number, string>
+  onNodeClick: (id: string) => void
+  onGroupClick: (groupIndex: number) => void
+  showDomainHulls: boolean
+  showGroupHulls: boolean
+
+}) {
+
   const ref = useRef<SVGSVGElement | null>(null)
   const width = window.innerWidth
   const height = window.innerHeight
 
   useEffect(() => {
-    if (groups) console.log('certificate groups', groups)
+    if (!ref.current) return;
+
+    const svg = d3.select(ref.current);
+
+    svg
+      .selectAll(".domain-hull")
+      .style("display", showDomainHulls ? null : "none" as any);
+
+    svg
+      .selectAll(".group-hull")
+      .style("display", showGroupHulls ? null : "none" as any);
+
+  }, [showDomainHulls, showGroupHulls]);
+
+  useEffect(() => {
     if (!ref.current) return
 
-    // Normalize member ids to strings so domain and group memberships match
     const allIdsSet = new Set<string>()
-    domains.flat().forEach((m: any) => { if (m !== undefined && m !== null) allIdsSet.add(String(m)) })
+
+    domains.flat().forEach(m => {
+      if (m !== undefined && m !== null) allIdsSet.add(String(m))
+    })
+
     if (groups) {
-      groups.flat().forEach((g: any) => { if (g && g.id !== undefined && g.id !== null) allIdsSet.add(String(g.id)) })
+      groups.flat().forEach(g => {
+        if (g !== undefined && g!== null) allIdsSet.add(String(g))
+      })
     }
 
-    const allIds = Array.from(allIdsSet)
 
-    const domainNodes = domains.map((_, idx) => ({ id: `domain-${idx}`, type: 'domain' }))
-    const groupNodes = (groups || []).map((_, idx) => ({ id: `group-${idx}`, type: 'group' }))
-    const memberNodes = allIds.map(id => ({ id, type: 'member' }))
+    const allIds = Array.from(allIdsSet)
+    console.log("applications")
+    console.log(applications)
+
+    const domainNodes = domains.map((_, idx) => ({
+      id: `domain-${idx}`,
+      type: "domain"
+    }))
+
+    const groupNodes = (groups || []).map((arr, idx) => ({
+      id: arr.groupId,
+      type: "group",
+      idx
+    }))
+
+    const memberNodes = allIds.map(id => ({
+      id,
+      type: "member",
+      name: applications[id] || "Unnamed"
+    }))
+
+    console.log("member nodes")
+    console.log(memberNodes)
+
     const nodes = [...domainNodes, ...groupNodes, ...memberNodes]
 
-    const domainLinks = domains.flatMap((domainArr, idx) => {
-      const centerId = `domain-${idx}`
-      return domainArr
-        .filter((m: any) => m !== undefined && m !== null)
-        .map((member: any) => ({ source: centerId as string, target: String(member) }))
-    })
+    const domainLinks = domains.flatMap((arr, idx) =>
+      arr
+        .filter(m => m !== undefined && m !== null)
+        .map(m => ({
+          source: `domain-${idx}`,
+          target: String(m)
+        }))
+    )
 
-    const groupLinks = (groups || []).flatMap((groupArr, idx) => {
-      const centerId = `group-${idx}`
-      return groupArr
-        .filter((g: any) => g && g.id !== undefined && g.id !== null)
-        .map((member: any) => ({ source: centerId as string, target: String(member.id) }))
-    })
+    const groupLinks = (groups || []).flatMap((arr, idx) =>
+      arr['applicationIds']
+        .filter(g => g !== undefined && g !== null)
+        .map(g => ({
+          source: arr.groupId,
+          target: String(g)
+        }))
+    )
 
     const links = [...domainLinks, ...groupLinks]
-
 
     const svg = d3.select(ref.current)
     svg.selectAll("*").remove()
@@ -48,85 +109,274 @@ export function Graph({ domains, groups }: { domains: (number | string)[][], gro
     const centerY = height / 2
     const radius = Math.min(width, height) / 4
     const groupRadius = radius * 0.6
+
     const domainTargets = new Map<string, { x: number; y: number }>()
-    domainNodes.forEach((dn: any, idx: number) => {
-      const angle = (idx / Math.max(1, domainNodes.length)) * Math.PI * 2
-      domainTargets.set(dn.id, { x: centerX + radius * Math.cos(angle), y: centerY + radius * Math.sin(angle) })
+    domainNodes.forEach((d, i) => {
+      const a = (i / Math.max(1, domainNodes.length)) * Math.PI * 2
+      domainTargets.set(d.id, {
+        x: centerX + radius * Math.cos(a),
+        y: centerY + radius * Math.sin(a)
+      })
     })
+
     const groupTargets = new Map<string, { x: number; y: number }>()
-    groupNodes.forEach((gn: any, idx: number) => {
-      const angle = (idx / Math.max(1, groupNodes.length)) * Math.PI * 2
-      groupTargets.set(gn.id, { x: centerX + groupRadius * Math.cos(angle), y: centerY + groupRadius * Math.sin(angle) })
-
+    groupNodes.forEach((g, i) => {
+      const a = (i / Math.max(1, groupNodes.length)) * Math.PI * 2
+      groupTargets.set(g.id, {
+        x: centerX + groupRadius * Math.cos(a),
+        y: centerY + groupRadius * Math.sin(a)
+      })
     })
 
-    const simulation = d3.forceSimulation(nodes as any)
-      .force("link", d3.forceLink(links as any).id((d: any) => d.id).distance((d: any) => ((d.source.type === 'domain' || d.target.type === 'domain' || d.source.type === 'group' || d.target.type === 'group') ? 140 : 100)).strength(0.6))
-      .force("charge", d3.forceManyBody().strength((d: any) => d.type === 'domain' ? -800 : d.type === 'group' ? -500 : -200).distanceMax(1000))
+    const simulation = d3
+      .forceSimulation(nodes as any)
+      .force(
+        "link",
+        d3
+          .forceLink(links as any)
+          .id((d: any) => d.id)
+          .distance(120)
+          .strength(2)
+      )
+      .force(
+        "charge",
+        d3.forceManyBody().strength((d: any) =>
+          d.type === "domain" ? -800 : d.type === "group" ? -500 : -200
+        )
+      )
       .force("center", d3.forceCenter(centerX, centerY))
-      .force("x", d3.forceX().x((d: any) => {
-        if (d.type === 'domain') return domainTargets.get(d.id)?.x ?? centerX
-        if (d.type === 'group') return groupTargets.get(d.id)?.x ?? centerX
-        return centerX
-      }).strength(0.06))
-      .force("y", d3.forceY().y((d: any) => {
-        if (d.type === 'domain') return domainTargets.get(d.id)?.y ?? centerY
-        if (d.type === 'group') return groupTargets.get(d.id)?.y ?? centerY
-        return centerY
-      }).strength(0.06))
-      .force("collide", d3.forceCollide().radius((d: any) => d.type === 'domain' || d.type === 'group' ? 36 : 18).strength(1.5))
-
-    const link = svg.append("g")
-      .selectAll("line")
-      .data(links)
-      .enter()
-      .append("line")
-      .attr("stroke", "black")
-
-    link.style("opacity", 0.8)
-
-    const node = svg.append("g")
-      .selectAll("circle")
-      .data(nodes)
-      .enter()
-      .append("circle")
-      .attr("r", (d: any) => d.type === 'domain' ? 12 : d.type === 'group' ? 12 : 6)
-      .attr("fill", (d: any) => d.type === 'domain' ? 'red' : d.type === 'group' ? 'green' : 'blue')
-      .call(
-        d3.drag<SVGCircleElement, any>()
-          .on("start", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart()
-            d.fx = d.x
-            d.fy = d.y
-          })
-          .on("drag", (event, d) => {
-            d.fx = event.x
-            d.fy = event.y
-          })
-          .on("end", (event, d) => {
-            if (!event.active) simulation.alphaTarget(0)
-            d.fx = null
-            d.fy = null
-          })
+      .force(
+        "x",
+        d3
+          .forceX()
+          .x((d: any) =>
+            d.type === "domain"
+              ? domainTargets.get(d.id)?.x ?? centerX
+              : d.type === "group"
+              ? groupTargets.get(d.id)?.x ?? centerX
+              : centerX
+          )
+          .strength(0.06)
+      )
+      .force(
+        "y",
+        d3
+          .forceY()
+          .y((d: any) =>
+            d.type === "domain"
+              ? domainTargets.get(d.id)?.y ?? centerY
+              : d.type === "group"
+              ? groupTargets.get(d.id)?.y ?? centerY
+              : centerY
+          )
+          .strength(0.06)
+      )
+      .force(
+        "collide",
+        d3.forceCollide().radius((d: any) =>
+          d.type === "domain" || d.type === "group" ? 36 : 18
+        )
       )
 
-    simulation.on("tick", () => {
-      link
-        .attr("x1", (d: any) => (d.source as any).x)
-        .attr("y1", (d: any) => (d.source as any).y)
-        .attr("x2", (d: any) => (d.target as any).x)
-        .attr("y2", (d: any) => (d.target as any).y)
+    const nodeMap = new Map<string, any>()
+    simulation.nodes().forEach((n: any) => nodeMap.set(String(n.id), n))
 
-      node
-        .attr("cx", (d: any) => d.x)
-        .attr("cy", (d: any) => d.y)
+    const lineGen = d3
+      .line<[number, number]>()
+      .curve(d3.curveCardinalClosed.tension(0.85))
+
+    const domainHullGroup = svg.append("g")
+
+   const domainHullPath = domainHullGroup
+      .selectAll("path")
+      .data(domainNodes)
+      .enter()
+      .append("path")
+      .attr("fill", "rgba(255,0,0,0.06)")
+      .attr("stroke", "red")
+      .attr("stroke-width", 1.5)
+      .attr("class", "domain-hull")
+
+    const groupHullGroup = svg.append("g")
+
+    const groupHullPath = groupHullGroup
+      .selectAll("path")
+      .data(groupNodes)
+      .enter()
+      .append("path")
+      .attr("fill", "rgba(0,128,0,0.08)")
+      .attr("stroke", "green")
+      .attr("stroke-width", 1.2)
+      .attr("class", "group-hull")
+      .on("click", (_event, d: any) => {
+        onGroupClick(d.id)
+      })
+
+    const node = svg
+      .append("g")
+      .selectAll("g")
+      .data(memberNodes)
+      .enter()
+      .append("g")
+
+    const labels = svg
+      .append("g")
+      .selectAll("text")
+      .data(memberNodes)
+      .enter()
+      .append("text")
+      .text((d: any) => d.name)
+      .attr("font-size", 10)
+      .attr("text-anchor", "middle")
+      .attr("fill", "black")
+      .attr("pointer-events", "none")
+    
+    const circles = node
+      .insert("circle", "text")
+      .attr("fill", "rgba(120,120,120,0.3)")
+      .attr("stroke", "rgba(80,80,80,0.8)")
+      .attr("stroke-width", 1)
+      .attr("r", function (_d: any, i: number) {
+        const textNode = labels.nodes()[i]
+        const bbox = textNode.getBBox()
+
+        return Math.max(bbox.width / 2 + 14, 18)
+      })
+      
+
+    const drag = d3.drag<SVGRectElement, any>()
+      .on("start", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart()
+
+        d.fx = d.x
+        d.fy = d.y
+      })
+      .on("drag", (event, d) => {
+        d.fx = event.x
+        d.fy = event.y
+      })
+      .on("end", (event, d) => {
+        if (!event.active) simulation.alphaTarget(0)
+
+        d.fx = null
+        d.fy = null
+      })
+      
+      node.call(drag as any)
+      node.on("click", (event, d: any) => {
+        if (d.type === "member") {
+          onNodeClick(d.id)
+        }
+      })
+
+    simulation.on("tick", () => {
+      const buildHull = (points: [number, number][], padding: number, padding_two: number) => {
+        if (points.length === 0) return ""
+
+        if (points.length === 1) {
+          const [x, y] = points[0]
+          const r = padding
+          return `
+            M ${x - r},${y}
+            a ${r},${r} 0 1,0 ${r * 2},0
+            a ${r},${r} 0 1,0 ${-r * 2},0
+          `
+        }
+        if (points.length === 2) {
+          const [p0, p1] = points
+
+          const dx = p1[0] - p0[0]
+          const dy = p1[1] - p0[1]
+          const len = Math.hypot(dx, dy) || 1
+
+          // unit vector along the line
+          const ux = dx / len
+          const uy = dy / len
+
+          // unit vector perpendicular to the line
+          const px = -uy
+          const py = ux
+
+          const r = padding_two * 1.5
+
+          const A = [p0[0] - ux * padding_two, p0[1] - uy * padding_two]
+          const B = [p1[0] + ux * padding_two, p1[1] + uy * padding_two]
+
+          const A1: [number, number] = [A[0] + px * r, A[1] + py * r]
+          const B1: [number, number] = [B[0] + px * r, B[1] + py * r]
+          const B2: [number, number] = [B[0] - px * r, B[1] - py * r]
+          const A2: [number, number] = [A[0] - px * r, A[1] - py * r]
+
+          return lineGen([A1, B1, B2, A2]) || ""
+        }
+
+        const hull = d3.polygonHull(points)
+        if (!hull) return ""
+
+        const c = d3.polygonCentroid(hull)
+
+        const expanded = hull.map(p => {
+          const dx = p[0] - c[0]
+          const dy = p[1] - c[1]
+          const len = Math.hypot(dx, dy) || 1
+
+          const expansion = len + padding + 30
+
+          return [
+            c[0] + (dx / len) * expansion,
+            c[1] + (dy / len) * expansion
+          ] as [number, number]
+        })
+
+        return lineGen(expanded) || ""
+      }
+
+      domainHullPath.attr("d", (_d, i) => {
+        const pts: [number, number][] = []
+
+        ;(domains[i] || []).forEach(m => {
+          const n = nodeMap.get(String(m))
+          if (
+            n &&
+            typeof n.x === "number" &&
+            typeof n.y === "number"
+          ) {
+            pts.push([n.x, n.y])
+          }
+        })
+
+        return buildHull(pts, 50, 20)
+      })
+
+      groupHullPath.attr("d", (_d, i) => {
+        const pts: [number, number][] = []
+
+        ;(groups?.[i]?.applicationIds || []).forEach(g => {
+          const n = nodeMap.get(String(g))
+          if (
+            n &&
+            typeof n.x === "number" &&
+            typeof n.y === "number"
+          ) {
+            pts.push([n.x, n.y])
+          }
+        })
+
+        return buildHull(pts, 70, 30)
+      })
+
+      node.attr(
+        "transform",
+        (d: any) => `translate(${d.x},${d.y})`
+      )
+      labels
+      .attr("x", (d: any) => d.x)
+      .attr("y", (d: any) => d.y + 4)
     })
 
-    return () => {
-      simulation.stop()
-      svg.selectAll("*").remove()
-    }
-  }, [domains])
+    return () => simulation.stop()
+  }, [domains, groups])
+
 
   return <svg ref={ref} width={width} height={height} />
 }
