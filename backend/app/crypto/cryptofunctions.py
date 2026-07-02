@@ -12,7 +12,9 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import NameOID
 from io import BytesIO
 import struct
-from OpenSSL import crypto
+from OpenSSL import crypto as ossl
+from OpenSSL._util import ffi as _ffi, lib as _lib
+
 
 
 
@@ -23,7 +25,7 @@ def verify_certs_against_trustlists(certs, trustlists):
                 return True
     return False
 
-
+'''
 def verify_cert(cert_bytes, trustlist):
     cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_bytes)
     store = crypto.X509Store()
@@ -34,15 +36,18 @@ def verify_cert(cert_bytes, trustlist):
     
     if trustlist["trusted_crls"]:
         for crl_bytes in trustlist["trusted_crls"]:
-            crl = x509.load_der_x509_crl(crl_bytes)
+            crl = crypto.load_crl(crypto.FILETYPE_ASN1, crl_bytes)
+            #crl = x509.load_der_x509_crl(crl_bytes)
             store.add_crl(crl)
     
     if trustlist["issuer_crls"]:
         for crl_bytes in trustlist["issuer_crls"]:
-            crl = x509.load_der_x509_crl(crl_bytes)
+            crl = crypto.load_crl(crypto.FILETYPE_ASN1, crl_bytes)
+            #crl = x509.load_der_x509_crl(crl_bytes)
             store.add_crl(crl)
 
-    #store.set_flags(crypto.X509StoreFlags.CRL_CHECK | crypto.X509StoreFlags.CRL_CHECK_ALL)
+    store.set_flags(crypto.X509StoreFlags.CRL_CHECK | crypto.X509StoreFlags.CRL_CHECK_ALL)
+    
     chain = [
         crypto.load_certificate(crypto.FILETYPE_ASN1, c)
         for c in trustlist["issuers"]
@@ -54,6 +59,109 @@ def verify_cert(cert_bytes, trustlist):
         return True
     except crypto.X509StoreContextError:
         return False
+'''
+
+'''
+def verify_cert(cert_bytes, trustlist):
+    cert_crypto = x509.load_der_x509_certificate(cert_bytes)
+
+    all_crls = []
+    for crl_bytes in (trustlist.get("trusted_crls") or []):
+        all_crls.append(x509.load_der_x509_crl(crl_bytes))
+    for crl_bytes in (trustlist.get("issuer_crls") or []):
+        all_crls.append(x509.load_der_x509_crl(crl_bytes))
+
+    for crl in all_crls:
+        if crl.issuer == cert_crypto.issuer:
+            for revoked in crl:
+                if revoked.serial_number == cert_crypto.serial_number:
+                    print(f"Certificate revoked: serial {cert_crypto.serial_number}")
+                    return False
+
+    store = ossl.X509Store()
+
+    for c in (trustlist.get("trusted_certificates") or []):
+        store.add_cert(ossl.X509.from_cryptography(
+            x509.load_der_x509_certificate(c)
+        ))
+    for c in (trustlist.get("issuer_certificates") or []):
+        store.add_cert(ossl.X509.from_cryptography(
+            x509.load_der_x509_certificate(c)
+        ))
+
+    chain = []
+    for c in (trustlist.get("issuer_certificates") or []):
+        chain.append(ossl.X509.from_cryptography(
+            x509.load_der_x509_certificate(c)
+        ))
+    for c in (trustlist.get("trusted_certificates") or []):
+        chain.append(ossl.X509.from_cryptography(
+            x509.load_der_x509_certificate(c)
+        ))
+
+    ossl_cert = ossl.X509.from_cryptography(cert_crypto)
+    store_ctx = ossl.X509StoreContext(store, ossl_cert, chain)
+    try:
+        store_ctx.verify_certificate()
+        return True
+    except ossl.X509StoreContextError as e:
+        print(f"Certificate verification failed: {e}")
+        return False
+'''
+
+from OpenSSL import crypto as ossl
+from cryptography import x509
+
+def verify_cert(cert_bytes, trustlist):
+    cert_crypto = x509.load_der_x509_certificate(cert_bytes)
+
+    # --- CRL check: end-entity only, against issuer's CRL ---
+    all_crls = []
+    for crl_bytes in (trustlist.get("trusted_crls") or []):
+        all_crls.append(x509.load_der_x509_crl(crl_bytes))
+    for crl_bytes in (trustlist.get("issuer_crls") or []):
+        all_crls.append(x509.load_der_x509_crl(crl_bytes))
+
+    for crl in all_crls:
+        if crl.issuer == cert_crypto.issuer:
+            for revoked in crl:
+                if revoked.serial_number == cert_crypto.serial_number:
+                    print(f"Certificate revoked: serial {cert_crypto.serial_number}")
+                    return False
+
+    # --- 1. Direct trust check (no chain needed) ---
+    trusted_certs_crypto = [
+        x509.load_der_x509_certificate(c)
+        for c in (trustlist.get("trusted_certificates") or [])
+    ]
+    for trusted in trusted_certs_crypto:
+        if trusted.fingerprint(cert_crypto.signature_hash_algorithm) == \
+           cert_crypto.fingerprint(cert_crypto.signature_hash_algorithm):
+            return True  # explicitly trusted, no chain needed
+
+    # --- 2. CA-based chain validation via OpenSSL ---
+    issuer_certs_crypto = [
+        x509.load_der_x509_certificate(c)
+        for c in (trustlist.get("issuer_certificates") or [])
+    ]
+
+    store = ossl.X509Store()
+    for c in trusted_certs_crypto:
+        store.add_cert(ossl.X509.from_cryptography(c))
+    for c in issuer_certs_crypto:
+        store.add_cert(ossl.X509.from_cryptography(c))
+
+    chain = [ossl.X509.from_cryptography(c) for c in issuer_certs_crypto]
+    ossl_cert = ossl.X509.from_cryptography(cert_crypto)
+
+    store_ctx = ossl.X509StoreContext(store, ossl_cert, chain)
+    try:
+        store_ctx.verify_certificate()
+        return True
+    except ossl.X509StoreContextError as e:
+        print(f"Certificate verification failed: {e}")
+        return False
+
 
 
 def bytes_2_cert(bytes: str):

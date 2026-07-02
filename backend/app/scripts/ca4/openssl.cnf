@@ -1,0 +1,18 @@
+[ ca ]
+		default_ca = CA_default
+		
+		[ CA_default ]
+		dir               = ./demoCA
+		database          = $dir/index.txt
+		new_certs_dir     = $dir/newcerts
+		certificate       = ./ca-cert.pem
+		private_key       = ./ca-key.pem
+		serial            = $dir/serial
+		crlnumber         = $dir/crlnumber
+		crl               = ./ca-crl.pem
+		default_crl_days  = 30
+		default_md        = sha256
+		policy            = policy_any
+		
+		[ policy_any ]
+		commonName = supplied

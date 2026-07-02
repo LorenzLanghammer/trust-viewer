@@ -116,7 +116,7 @@ class open62541GDS(GdsInterface):
             
             all_applications.append(application.Application(id, appuri, appname, discoveryurl, issued_certs, trustlists))
         '''
-
+ 
         return apps
 
     async def getCertificateGroupsForApplication(self, applicationId: structures.NodeId):
@@ -210,14 +210,31 @@ class open62541GDS(GdsInterface):
     
     async def readTrustList(self, nodeId: structures.NodeId):
         trustlist_node = structures.nodeid_2_uaNode(nodeId, self.client)
-        open_node = await trustlist_node.get_child(ua.QualifiedName("Open", 0))
+        
+        open_node = None
+        read_node = None
+        close_node = None
+
+        children = await trustlist_node.get_children()
+        for child in children:
+            bn = await child.read_browse_name()
+            if bn.Name == "Open" and open_node is None:
+                open_node = child
+            elif bn.Name == "Read" and read_node is None:
+                read_node = child
+            elif bn.Name == "Close" and close_node is None:
+                close_node = child
+
+        #open_node = await trustlist_node.get_child(ua.QualifiedName("Open", 0))
+        if not open_node or not read_node or not close_node:
+            raise Exception(f"TrustList node {nodeId} missing Open/Read/Close methods")
+
         handle = await trustlist_node.call_method(
             open_node,
             ua.Variant(1, ua.VariantType.Byte)
         )
 
         read_node = await trustlist_node.get_child(ua.QualifiedName("Read", 0))
-        
         
         data = b""
         chunk_size = 1024

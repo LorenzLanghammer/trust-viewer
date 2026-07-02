@@ -15,6 +15,6 @@
 		subjectAltName = @alt_names
 		
 		[ alt_names ]
-		URI.1 = app2:uri
+		URI.1 = application2
 		DNS.1 = localhost
 		IP.1  = 127.0.0.1

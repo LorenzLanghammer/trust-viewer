@@ -74,7 +74,8 @@ export function Graph({
     const memberNodes = allIds.map(id => ({
       id,
       type: "member",
-      name: applications[id] || "Unnamed"
+      name: applications[id] || "Unnamed",
+      radius: 18
     }))
 
     console.log("member nodes")
@@ -136,7 +137,7 @@ export function Graph({
           .forceLink(links as any)
           .id((d: any) => d.id)
           .distance(120)
-          .strength(2)
+          .strength(0.05)
       )
       .force(
         "charge",
@@ -174,13 +175,13 @@ export function Graph({
       .force(
         "collide",
         d3.forceCollide().radius((d: any) =>
-          d.type === "domain" || d.type === "group" ? 36 : 18
-        )
+          d.radius ?? 18
+        ).strength(1)
       )
 
     const nodeMap = new Map<string, any>()
     simulation.nodes().forEach((n: any) => nodeMap.set(String(n.id), n))
-
+    
     const lineGen = d3
       .line<[number, number]>()
       .curve(d3.curveCardinalClosed.tension(0.85))
@@ -242,24 +243,41 @@ export function Graph({
 
         return Math.max(bbox.width / 2 + 14, 18)
       })
+
+    circles.attr("r", function(d: any, i) {
+      const bbox = labels.nodes()[i].getBBox();
+      d.radius = Math.max(bbox.width / 2 + 14, 18);
+      return d.radius;
+    });
       
 
     const drag = d3.drag<SVGRectElement, any>()
       .on("start", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0.3).restart()
-
-        d.fx = d.x
-        d.fy = d.y
+        d.fx = d.x;
+        d.fy = d.y;
       })
       .on("drag", (event, d) => {
-        d.fx = event.x
-        d.fy = event.y
+        d.fx = event.x;
+        d.fy = event.y;
+
+        d.x = event.x;
+        d.y = event.y;
+
+        updateGraph();
       })
       .on("end", (event, d) => {
-        if (!event.active) simulation.alphaTarget(0)
+        d.fx = event.x;
+        d.fy = event.y;
 
-        d.fx = null
-        d.fy = null
+        d.x = event.x;
+        d.y = event.y;
+
+        updateGraph();
+      })
+      .on("end", (event, d) => {
+        // keep it where the user dropped it
+        d.fx = event.x;
+        d.fy = event.y;
       })
       
       node.call(drag as any)
@@ -268,8 +286,10 @@ export function Graph({
           onNodeClick(d.id)
         }
       })
+    
+    
+    function updateGraph() {
 
-    simulation.on("tick", () => {
       const buildHull = (points: [number, number][], padding: number, padding_two: number) => {
         if (points.length === 0) return ""
 
@@ -372,8 +392,16 @@ export function Graph({
       labels
       .attr("x", (d: any) => d.x)
       .attr("y", (d: any) => d.y + 4)
-    })
+    }
 
+    //simulation.on("tick", updateGraph)
+    for (let i = 0; i < 300; i++) {
+      simulation.tick();
+    }
+
+    simulation.stop();
+
+    updateGraph();
     return () => simulation.stop()
   }, [domains, groups])
 
