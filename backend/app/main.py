@@ -23,6 +23,7 @@ applications_list = []
 application_store = {}
 certificates_store = {}
 trustlists_store = {}
+group_store = {}
 crl_store = {}
 
 
@@ -43,6 +44,11 @@ async def getapplication(app_id: int):
 async def get_trustlist(group_id: int):
     trustlist = trustlists_store[group_id]
     return(trustlist.to_dict())
+
+@app.get("/getcertgroups/{group_id}")
+async def get_certgroup(group_id: int):
+    group = group_store[group_id]
+    return(group.to_dict())
 
 @app.get("/getcrl/{crl_id}")
 async def get_crl(crl_id: int):
@@ -224,12 +230,20 @@ async def getcertificategroups():
                 crl = cryptofunctions.crl_2_crlSummary(issuer_crl)
                 issuer_crls.append(crl)
 
+            
             trustlists_store[structures.uaNodeId_2_nodeid(cert_group_node).id] = trustlist.TrustList(
+                    group_name,
                     trusted_cert_summaries,
                     trusted_crls,
                     issuer_cert_summaries,
                     issuer_crls
                 )
+
+            '''
+            group_store[structures.uaNodeId_2_nodeid(cert_group_node).id] = certificateGroup.CertificateGroup(
+                
+            )
+            '''
             
             apps = cert_group_detail.Applications
             group_apps = []
@@ -242,6 +256,7 @@ async def getcertificategroups():
                       "applications": group_apps
                      }
             groups.append(group)
+            print(group["group_name"])
         
         return {
             "groups": groups

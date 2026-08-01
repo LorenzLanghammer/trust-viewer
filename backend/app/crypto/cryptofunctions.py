@@ -14,8 +14,9 @@ from io import BytesIO
 import struct
 from OpenSSL import crypto as ossl
 from OpenSSL._util import ffi as _ffi, lib as _lib
-
-
+from OpenSSL import crypto as ossl
+from OpenSSL.crypto import X509StoreFlags
+from cryptography import x509
 
 
 def verify_certs_against_trustlists(certs, trustlists):
@@ -25,143 +26,39 @@ def verify_certs_against_trustlists(certs, trustlists):
                 return True
     return False
 
-'''
+def _load_certs(der_list):
+    return [ossl.X509.from_cryptography(x509.load_der_x509_certificate(c)) for c in (der_list or [])]
+
+
 def verify_cert(cert_bytes, trustlist):
-    cert = crypto.load_certificate(crypto.FILETYPE_ASN1, cert_bytes)
-    store = crypto.X509Store()
+    ossl_cert = ossl.X509.from_cryptography(x509.load_der_x509_certificate(cert_bytes))
 
-    if trustlist["trusted_certificates"]:
-        for c in trustlist["trusted_certificates"]:
-            store.add_cert(crypto.load_certificate(crypto.FILETYPE_ASN1, c))
-    
-    if trustlist["trusted_crls"]:
-        for crl_bytes in trustlist["trusted_crls"]:
-            crl = crypto.load_crl(crypto.FILETYPE_ASN1, crl_bytes)
-            #crl = x509.load_der_x509_crl(crl_bytes)
-            store.add_crl(crl)
-    
-    if trustlist["issuer_crls"]:
-        for crl_bytes in trustlist["issuer_crls"]:
-            crl = crypto.load_crl(crypto.FILETYPE_ASN1, crl_bytes)
-            #crl = x509.load_der_x509_crl(crl_bytes)
-            store.add_crl(crl)
-
-    store.set_flags(crypto.X509StoreFlags.CRL_CHECK | crypto.X509StoreFlags.CRL_CHECK_ALL)
-    
-    chain = [
-        crypto.load_certificate(crypto.FILETYPE_ASN1, c)
-        for c in trustlist["issuers"]
-    ]
-    store_ctx = crypto.X509StoreContext(store, cert, chain)
-
-    try:
-        store_ctx.verify_certificate()
-        return True
-    except crypto.X509StoreContextError:
-        return False
-'''
-
-'''
-def verify_cert(cert_bytes, trustlist):
-    cert_crypto = x509.load_der_x509_certificate(cert_bytes)
-
-    all_crls = []
-    for crl_bytes in (trustlist.get("trusted_crls") or []):
-        all_crls.append(x509.load_der_x509_crl(crl_bytes))
-    for crl_bytes in (trustlist.get("issuer_crls") or []):
-        all_crls.append(x509.load_der_x509_crl(crl_bytes))
-
-    for crl in all_crls:
-        if crl.issuer == cert_crypto.issuer:
-            for revoked in crl:
-                if revoked.serial_number == cert_crypto.serial_number:
-                    print(f"Certificate revoked: serial {cert_crypto.serial_number}")
-                    return False
+    trusted_certs = _load_certs(trustlist.get("trusted_certificates"))
+    issuer_certs = _load_certs(trustlist.get("issuer_certificates"))
+    crls = (trustlist.get("trusted_crls") or []) + (trustlist.get("issuer_crls") or [])
 
     store = ossl.X509Store()
+    for c in trusted_certs:
+        store.add_cert(c)
+    for crl_bytes in crls:
+        crl_crypto = x509.load_der_x509_crl(crl_bytes)
+        store.add_crl(crl_crypto)
 
-    for c in (trustlist.get("trusted_certificates") or []):
-        store.add_cert(ossl.X509.from_cryptography(
-            x509.load_der_x509_certificate(c)
-        ))
-    for c in (trustlist.get("issuer_certificates") or []):
-        store.add_cert(ossl.X509.from_cryptography(
-            x509.load_der_x509_certificate(c)
-        ))
+    for issuer in issuer_certs:
+        print("issuer cert subject")
+        print(issuer.get_subject())
 
-    chain = []
-    for c in (trustlist.get("issuer_certificates") or []):
-        chain.append(ossl.X509.from_cryptography(
-            x509.load_der_x509_certificate(c)
-        ))
-    for c in (trustlist.get("trusted_certificates") or []):
-        chain.append(ossl.X509.from_cryptography(
-            x509.load_der_x509_certificate(c)
-        ))
+    flags = X509StoreFlags.PARTIAL_CHAIN
+    flags |= X509StoreFlags.CRL_CHECK | X509StoreFlags.CRL_CHECK_ALL
+    store.set_flags(flags)
 
-    ossl_cert = ossl.X509.from_cryptography(cert_crypto)
-    store_ctx = ossl.X509StoreContext(store, ossl_cert, chain)
+    store_ctx = ossl.X509StoreContext(store, ossl_cert, chain=issuer_certs)
     try:
         store_ctx.verify_certificate()
         return True
     except ossl.X509StoreContextError as e:
         print(f"Certificate verification failed: {e}")
         return False
-'''
-
-from OpenSSL import crypto as ossl
-from cryptography import x509
-
-def verify_cert(cert_bytes, trustlist):
-    cert_crypto = x509.load_der_x509_certificate(cert_bytes)
-
-    # --- CRL check: end-entity only, against issuer's CRL ---
-    all_crls = []
-    for crl_bytes in (trustlist.get("trusted_crls") or []):
-        all_crls.append(x509.load_der_x509_crl(crl_bytes))
-    for crl_bytes in (trustlist.get("issuer_crls") or []):
-        all_crls.append(x509.load_der_x509_crl(crl_bytes))
-
-    for crl in all_crls:
-        if crl.issuer == cert_crypto.issuer:
-            for revoked in crl:
-                if revoked.serial_number == cert_crypto.serial_number:
-                    print(f"Certificate revoked: serial {cert_crypto.serial_number}")
-                    return False
-
-    # --- 1. Direct trust check (no chain needed) ---
-    trusted_certs_crypto = [
-        x509.load_der_x509_certificate(c)
-        for c in (trustlist.get("trusted_certificates") or [])
-    ]
-    for trusted in trusted_certs_crypto:
-        if trusted.fingerprint(cert_crypto.signature_hash_algorithm) == \
-           cert_crypto.fingerprint(cert_crypto.signature_hash_algorithm):
-            return True  # explicitly trusted, no chain needed
-
-    # --- 2. CA-based chain validation via OpenSSL ---
-    issuer_certs_crypto = [
-        x509.load_der_x509_certificate(c)
-        for c in (trustlist.get("issuer_certificates") or [])
-    ]
-
-    store = ossl.X509Store()
-    for c in trusted_certs_crypto:
-        store.add_cert(ossl.X509.from_cryptography(c))
-    for c in issuer_certs_crypto:
-        store.add_cert(ossl.X509.from_cryptography(c))
-
-    chain = [ossl.X509.from_cryptography(c) for c in issuer_certs_crypto]
-    ossl_cert = ossl.X509.from_cryptography(cert_crypto)
-
-    store_ctx = ossl.X509StoreContext(store, ossl_cert, chain)
-    try:
-        store_ctx.verify_certificate()
-        return True
-    except ossl.X509StoreContextError as e:
-        print(f"Certificate verification failed: {e}")
-        return False
-
 
 
 def bytes_2_cert(bytes: str):
@@ -281,9 +178,7 @@ def get_extensions(extensions: x509.Extensions):
 
 
 def bytes_2_trustlist(data):
-
     offset = 0
-
     def read_u32():
         nonlocal offset
         if offset + 4 > len(data):
@@ -299,7 +194,6 @@ def bytes_2_trustlist(data):
 
         if length < 0:
             return None
-
         if offset + length > len(data):
             raise ValueError(f"Invalid length {length}, buffer too small")
 
@@ -308,7 +202,6 @@ def bytes_2_trustlist(data):
         return val
 
     result = {}
-
     result["specified_lists"] = read_u32()
 
     cert_count = read_u32()
@@ -328,7 +221,39 @@ def bytes_2_trustlist(data):
     result["issuer_crls"] = issuer_crls
 
     return result
-    
+
+def trustlist_2_bytes(trustlist):
+        def write_u32(val):
+            return struct.pack("<i", val)
+
+        def write_bytes(b):
+            if b is None:
+                return write_u32(-1)
+            return write_u32(len(b)) + b
+
+        out = bytearray()
+        out += write_u32(trustlist["specifiec_lists"])
+        certs = trustlist.get("trusted_certificates") or []
+        out += write_u32(len(certs))
+        for c in certs:
+            out += write_bytes(c)
+
+        crls = trustlist.get("trusted_crls") or []
+        out += write_u32(len(crls))
+        for c in crls:
+            out += write_bytes(c)
+
+        issuers = trustlist.get("issuers") or []
+        out += write_u32(len(issuers))
+        for c in issuers:
+            out += write_bytes(c)
+
+        issuer_crls = trustlist.get("issuer_crls") or []
+        out += write_u32(len(issuer_crls))
+        for c in issuer_crls:
+            out += write_bytes(c)
+
+        return bytes(out)
 
 def cert_bytes_2_certSummary(cert):
     x509_cert = x509.load_der_x509_certificate(cert)
@@ -375,7 +300,5 @@ def get_certs_and_trustlist(cert, trustlist_bytes):
     
     return result
             
-
-
 def cert_id(cert: x509):
     return cert.fingerprint(hashes.SHA256()).hex()

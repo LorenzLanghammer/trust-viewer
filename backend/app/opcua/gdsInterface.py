@@ -156,7 +156,6 @@ class open62541GDS(GdsInterface):
             ua.Variant(certificateGroups, ua.VariantType.NodeId)
         )
         return certificate_group_details
-
     
     async def getTrustList(self, applicationId: structures.NodeId, certificateGroupId: structures.NodeId):
         
@@ -262,4 +261,3 @@ class open62541GDS(GdsInterface):
         
         #trustlist = cryptofunctions.bytes_2_trustlist(trustlist_bytes)
         return(data)
-    

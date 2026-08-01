@@ -49,11 +49,13 @@ export function Graph({
       if (m !== undefined && m !== null) allIdsSet.add(String(m))
     })
 
-    if (groups) {
-      groups.flat().forEach(g => {
-        if (g !== undefined && g!== null) allIdsSet.add(String(g))
+    ;(groups || []).forEach(group => {
+      ;(group.applicationIds || []).forEach(appId => {
+        if (appId !== undefined && appId !== null) {
+          allIdsSet.add(String(appId))
+        }
       })
-    }
+    })
 
 
     const allIds = Array.from(allIdsSet)
@@ -123,11 +125,36 @@ export function Graph({
     const groupTargets = new Map<string, { x: number; y: number }>()
     groupNodes.forEach((g, i) => {
       const a = (i / Math.max(1, groupNodes.length)) * Math.PI * 2
-      groupTargets.set(g.id, {
+      groupTargets.set(String(g.id), {
         x: centerX + groupRadius * Math.cos(a),
         y: centerY + groupRadius * Math.sin(a)
       })
     })
+
+    const getGroupIndexForNode = (nodeId: string): number | null => {
+      const appId = Number(nodeId)
+      const idx = groups.findIndex((g) => g.applicationIds.includes(appId))
+      return idx >= 0 ? idx : null
+    }
+
+    const getMemberTarget = (node: any) => {
+      if (node.type !== "member") {
+        return { x: centerX, y: centerY }
+      }
+
+      const groupIndex = getGroupIndexForNode(node.id)
+      if (groupIndex === null) {
+        return { x: centerX, y: centerY }
+      }
+
+      const groupNode = groupNodes[groupIndex]
+      return (
+        groupTargets.get(String(groupNode.id)) ?? { x: centerX, y: centerY }
+      )
+    }
+
+    const members = nodes.filter((n: any) => n.type === "member")
+    const groupAnchors = nodes.filter((n: any) => n.type === "group")
 
     const simulation = d3
       .forceSimulation(nodes as any)
@@ -146,42 +173,64 @@ export function Graph({
         )
       )
       .force("center", d3.forceCenter(centerX, centerY))
-      .force(
-        "x",
-        d3
-          .forceX()
-          .x((d: any) =>
-            d.type === "domain"
-              ? domainTargets.get(d.id)?.x ?? centerX
-              : d.type === "group"
-              ? groupTargets.get(d.id)?.x ?? centerX
-              : centerX
-          )
-          .strength(0.06)
-      )
-      .force(
-        "y",
-        d3
-          .forceY()
-          .y((d: any) =>
-            d.type === "domain"
-              ? domainTargets.get(d.id)?.y ?? centerY
-              : d.type === "group"
-              ? groupTargets.get(d.id)?.y ?? centerY
-              : centerY
-          )
-          .strength(0.06)
-      )
+      .force("x", d3.forceX().x((d: any) => {
+        if (d.type === "domain") return domainTargets.get(d.id)?.x ?? centerX
+        if (d.type === "group") return groupTargets.get(String(d.id))?.x ?? centerX
+        return getMemberTarget(d).x
+      }).strength((d: any) => (d.type === "member" ? 0.12 : 0.05)))
+
+      .force("y", d3.forceY().y((d: any) => {
+        if (d.type === "domain") return domainTargets.get(d.id)?.y ?? centerY
+        if (d.type === "group") return groupTargets.get(String(d.id))?.y ?? centerY
+        return getMemberTarget(d).y
+      }).strength((d: any) => (d.type === "member" ? 0.12 : 0.05)))
       .force(
         "collide",
         d3.forceCollide().radius((d: any) =>
           d.radius ?? 18
         ).strength(1)
-      )
+      ).
+      force("bounds", () => {
+          const padding = 40
+
+          nodes.forEach((node: any) => {
+            const r = node.radius ?? 18
+            const minX = padding + r
+            const maxX = width - padding - r
+            const minY = padding + r
+            const maxY = height - padding - r
+
+            if (node.x < minX) {
+              node.x = minX
+              node.vx = Math.max(node.vx, 0)
+            } else if (node.x > maxX) {
+              node.x = maxX
+              node.vx = Math.min(node.vx, 0)
+            }
+
+            if (node.y < minY) {
+              node.y = minY
+              node.vy = Math.max(node.vy, 0)
+            } else if (node.y > maxY) {
+              node.y = maxY
+              node.vy = Math.min(node.vy, 0)
+            }
+          })
+        }).
+        force("groupSeparation", forceGroupSeparation(getGroupIndexForNode, 180, 0.9))
 
     const nodeMap = new Map<string, any>()
     simulation.nodes().forEach((n: any) => nodeMap.set(String(n.id), n))
     
+    const findGroupForNode = (nodeId: string): number | null => {
+      for (let i = 0; i < groups.length; i++) {
+        if (groups[i].applicationIds.includes(Number(nodeId))) {
+          return i;
+        }
+      }
+      return null;
+    };
+
     const lineGen = d3
       .line<[number, number]>()
       .curve(d3.curveCardinalClosed.tension(0.85))
@@ -193,6 +242,7 @@ export function Graph({
       .data(domainNodes)
       .enter()
       .append("path")
+      .style("display", showDomainHulls ? "inline" : "none")
       .attr("fill", "rgba(255,0,0,0.06)")
       .attr("stroke", "red")
       .attr("stroke-width", 1.5)
@@ -205,7 +255,7 @@ export function Graph({
       .data(groupNodes)
       .enter()
       .append("path")
-      .attr("fill", "rgba(0,128,0,0.08)")
+      .style("display", showGroupHulls ? "inline" : "none")      .attr("fill", "rgba(0,128,0,0.08)")
       .attr("stroke", "green")
       .attr("stroke-width", 1.2)
       .attr("class", "group-hull")
@@ -275,7 +325,6 @@ export function Graph({
         updateGraph();
       })
       .on("end", (event, d) => {
-        // keep it where the user dropped it
         d.fx = event.x;
         d.fy = event.y;
       })
@@ -287,6 +336,44 @@ export function Graph({
         }
       })
     
+    function forceGroupSeparation(
+      getGroupIndexForNode: (id: string) => number | null,
+      minDistance: number,
+      strength: number
+    ) {
+      let nodes: any[] = []
+
+      function force(alpha: number) {
+        const members = nodes.filter((n: any) => n.type === "member")
+
+        for (let i = 0; i < members.length; i++) {
+          const a = members[i]
+          const gA = getGroupIndexForNode(a.id)
+          if (gA === null) continue
+
+          for (let j = i + 1; j < members.length; j++) {
+            const b = members[j]
+            const gB = getGroupIndexForNode(b.id)
+            if (gB === null || gB === gA) continue
+
+            const dx = (b.x ?? 0) - (a.x ?? 0)
+            const dy = (b.y ?? 0) - (a.y ?? 0)
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1
+
+            if (dist < minDistance) {
+              const push = ((minDistance - dist) / dist) * strength * alpha
+              const fx = dx * push
+              const fy = dy * push
+              a.vx -= fx; a.vy -= fy
+              b.vx += fx; b.vy += fy
+            }
+          }
+        }
+      }
+
+      force.initialize = (ns: any[]) => { nodes = ns }
+      return force
+    }
     
     function updateGraph() {
 
