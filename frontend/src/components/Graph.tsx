@@ -57,7 +57,6 @@ export function Graph({
       })
     })
 
-
     const allIds = Array.from(allIdsSet)
     console.log("applications")
     console.log(applications)
@@ -110,8 +109,8 @@ export function Graph({
 
     const centerX = width / 2
     const centerY = height / 2
-    const radius = Math.min(width, height) / 4
-    const groupRadius = radius * 0.6
+    const radius = Math.min(width, height) / 3;
+    const groupRadius = radius * 0.9;
 
     const domainTargets = new Map<string, { x: number; y: number }>()
     domainNodes.forEach((d, i) => {

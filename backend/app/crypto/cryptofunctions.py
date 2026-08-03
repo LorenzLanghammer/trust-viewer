@@ -34,7 +34,7 @@ def verify_cert(cert_bytes, trustlist):
     ossl_cert = ossl.X509.from_cryptography(x509.load_der_x509_certificate(cert_bytes))
 
     trusted_certs = _load_certs(trustlist.get("trusted_certificates"))
-    issuer_certs = _load_certs(trustlist.get("issuer_certificates"))
+    issuer_certs = _load_certs(trustlist.get("issuers"))
     crls = (trustlist.get("trusted_crls") or []) + (trustlist.get("issuer_crls") or [])
 
     store = ossl.X509Store()
@@ -158,20 +158,12 @@ def get_extensions(extensions: x509.Extensions):
 
         elif (ext._oid == ExtensionOID.BASIC_CONSTRAINTS):
             name = ext._oid._name
-            ext_value = ext._value
+            val = ext.value
 
             constraint_list = []
-            
-            if (ext_value._ca):
-                constraint_list.append("CA: True")
-            else:
-                constraint_list.append("CA: False")
+            constraint_list.append(f"CA: {val.ca}")
+            constraint_list.append(f"Path length: {val.path_length if val.path_length is not None else 'None'}")
 
-            if not ext_value._path_length:
-                constraint_list.append("Path length: None")
-            else:
-                constraint_list.append(f"path length: {ext_value.path_length}")
-            
             extensions_list.append(extension.Extension(name, constraint_list))
         
     return extensions_list
